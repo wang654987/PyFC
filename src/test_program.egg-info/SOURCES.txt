@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+src/__init__.py
+src/cartridge.py
+src/input.py
+src/palette.py
+src/test_program.egg-info/PKG-INFO
+src/test_program.egg-info/SOURCES.txt
+src/test_program.egg-info/dependency_links.txt
+src/test_program.egg-info/top_level.txt
+tests/test_cartridge.py
+tests/test_palette.py
