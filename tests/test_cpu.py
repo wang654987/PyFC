@@ -995,8 +995,9 @@ class TestOpcodeCoverage:
             0x98,
         }
 
-        # _opcode_table is now a list of (addr_fn, op_fn, cycles) tuples.
-        # Defined opcodes have unique tuples; undefined ones share the NOP ref.
+        # _opcode_table is a list[Instruction] (256 entries).
+        # Defined opcodes have unique Instruction objects; undefined ones
+        # share the same NOP fallback object.
         nop_opcode = next(i for i in range(256) if i not in official_opcodes)
         nop_ref = cpu._opcode_table[nop_opcode]
         defined: set[int] = {

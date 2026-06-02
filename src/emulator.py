@@ -182,20 +182,9 @@ class Emulator:
             if frame_cycles > max_cycles:
                 break
 
-            # ── Normal lockstep: CPU → PPU ────────────────────────
             cpu_cycles = cpu_step()
             frame_cycles += cpu_cycles
             ppu_tick_batch(cpu_cycles * 3)
-
-            # ── VBlank burst: once PPU enters VBlank, let CPU run ─
-            #    in bulk then fast-forward the remaining scanlines.
-            if ppu.scanline >= 241 and not ppu.frame_complete:
-                for _ in range(300):
-                    frame_cycles += cpu_step()
-                    if ppu.frame_complete:
-                        break
-                if ppu.scanline >= 241 and not ppu.frame_complete:
-                    ppu._fast_forward_vblank()
 
 
     def _update_fps_display(self) -> None:
