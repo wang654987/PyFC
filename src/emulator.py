@@ -159,11 +159,12 @@ class Emulator:
     def _run_frame(self) -> None:
         """Execute one frame's worth of CPU/PPU simulation.
 
-        Loops until ``PPU.frame_complete`` is True, advancing the CPU by
-        one instruction and then ticking the PPU in batch via
-        ``tick_batch()`` — which avoids the per-cycle Python call overhead
-        of the old ``for _ in range(c): ppu.tick()`` pattern and
-        fast-forwards through VBlank automatically.
+        Loops until ``PPU.frame_complete`` is True.  During visible
+        scanlines the CPU and PPU advance in lockstep.  Once VBlank is
+        reached the CPU is allowed to run in bursts before the PPU
+        fast-forwards to the end of the frame — this lets the game
+        update PPU registers during VBlank while avoiding per-cycle
+        tick overhead.
 
         A safety cap prevents infinite hangs caused by buggy ROMs.
         """
@@ -180,9 +181,21 @@ class Emulator:
         while not ppu.frame_complete:
             if frame_cycles > max_cycles:
                 break
+
+            # ── Normal lockstep: CPU → PPU ────────────────────────
             cpu_cycles = cpu_step()
             frame_cycles += cpu_cycles
             ppu_tick_batch(cpu_cycles * 3)
+
+            # ── VBlank burst: once PPU enters VBlank, let CPU run ─
+            #    in bulk then fast-forward the remaining scanlines.
+            if ppu.scanline >= 241 and not ppu.frame_complete:
+                for _ in range(300):
+                    frame_cycles += cpu_step()
+                    if ppu.frame_complete:
+                        break
+                if ppu.scanline >= 241 and not ppu.frame_complete:
+                    ppu._fast_forward_vblank()
 
 
     def _update_fps_display(self) -> None:

@@ -7,21 +7,15 @@ and full interrupt handling (NMI, IRQ, RESET, BRK).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .bus import Bus
 
 
-@dataclass(slots=True)
-class Instruction:
-    """Descriptor for a single opcode entry in the instruction table."""
-
-    mnemonic: str
-    addressing_mode_fn: Callable[..., tuple[int, bool]]
-    operation_fn: Callable[..., int]
-    base_cycles: int
+# Opcode table entry: (addressing_fn, operation_fn, base_cycles) tuple.
+# Plain tuples avoid the attribute-lookup overhead of a dataclass
+# in the hot ``step()`` path.
 
 
 class CPU6502:
@@ -60,7 +54,8 @@ class CPU6502:
         self.status = 0x24  # I flag + unused flag set
         self.cycles = 0
         self._interrupt_type: int = 0  # 0=none, 1=NMI, 2=IRQ
-        self._opcode_table: list[Instruction] = self._build_opcode_table()
+        # Opcode table: list of (addr_fn, op_fn, base_cycles) tuples
+        self._opcode_table: list[tuple] = self._build_opcode_table()
 
     # ── Bus I/O helpers ────────────────────────────────────────────
 
@@ -659,17 +654,17 @@ class CPU6502:
         opcode = self._read(self.pc)
         self.pc = (self.pc + 1) & 0xFFFF
 
-        # 3. Look up instruction table (list index — O(1) no hashing)
-        instr = self._opcode_table[opcode]
+        # 3. Look up + unpack opcode table entry (tuple, no dataclass overhead)
+        addr_fn, op_fn, base_cycles = self._opcode_table[opcode]
 
         # 4. Resolve operand address via addressing mode
-        addr, crossed_page = instr.addressing_mode_fn()
+        addr, crossed_page = addr_fn()
 
         # 5. Execute the instruction
-        extra_cycles = instr.operation_fn(addr, crossed_page)
+        extra_cycles = op_fn(addr, crossed_page)
 
         # 6. Update total cycles
-        total = instr.base_cycles + extra_cycles
+        total = base_cycles + extra_cycles
         self.cycles += total
         return total
 
@@ -677,26 +672,26 @@ class CPU6502:
     #  Opcode table builder
     # ═══════════════════════════════════════════════════════════════
 
-    def _build_opcode_table(self) -> list[Instruction]:
-        """Build the 256-entry opcode → Instruction array.
+    def _build_opcode_table(self) -> list[tuple]:
+        """Build the 256-entry opcode → (addr_fn, op_fn, cycles) tuple array.
 
         All 256 slots are filled: undefined opcodes map to a NOP
-        fallback so that ``step()`` can use direct list indexing
-        instead of slower dict-hash lookups.
+        fallback so that ``step()`` can use direct list indexing.
+        Tuples avoid the attribute-lookup overhead of a dataclass.
         """
-        nop = Instruction("NOP", self._addr_imp, self._op_nop, 2)
-        t: list[Instruction] = [nop] * 256
+        nop_entry = (self._addr_imp, self._op_nop, 2)
+        t: list[tuple] = [nop_entry] * 256
 
         def add(
             opcodes: list[int],
-            mnemonic: str,
+            _mnemonic: str,
             addr_fn: Callable[..., tuple[int, bool]],
             op_fn: Callable[..., int],
             base_cycles: int,
         ) -> None:
-            instr = Instruction(mnemonic, addr_fn, op_fn, base_cycles)
+            entry = (addr_fn, op_fn, base_cycles)
             for op in opcodes:
-                t[op] = instr
+                t[op] = entry
 
         # ── LDA (8 opcodes) ────────────────────────────────────────
         add([0xA9], "LDA", self._addr_imm, self._op_lda, 2)
